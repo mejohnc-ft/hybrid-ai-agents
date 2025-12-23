@@ -19,6 +19,19 @@ export interface CloudResolutionResult {
   estimated_time: string;
   requires_specialist: boolean;
   specialist_notes?: string;
+  // Token usage from API response
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+export interface CloudAgentConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  azureApiVersion?: string;
 }
 
 export class CloudConfigurationError extends Error {}
@@ -27,20 +40,22 @@ export class GenericCloudAgent {
   private client: OpenAI;
   private model: string;
   private systemPrompt: string;
+  private isAzure: boolean;
 
-  constructor() {
-    // Support any OpenAI-compatible API
-    const apiKey = process.env.CLOUD_AI_API_KEY;
-    const baseURL = process.env.CLOUD_AI_BASE_URL;
+  constructor(config?: CloudAgentConfig) {
+    // Support runtime configuration or environment variables
+    const apiKey = config?.apiKey || process.env.CLOUD_AI_API_KEY;
+    const baseURL = config?.baseUrl || process.env.CLOUD_AI_BASE_URL;
     const isAzureEndpoint = baseURL?.toLowerCase().includes('.azure.com');
+    this.isAzure = isAzureEndpoint;
 
     if (!apiKey) {
       throw new CloudConfigurationError('CLOUD_AI_API_KEY environment variable is required');
     }
 
     if (isAzureEndpoint) {
-      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-08-01-preview';
-      const deployment = process.env.CLOUD_AI_MODEL;
+      const apiVersion = config?.azureApiVersion || process.env.AZURE_OPENAI_API_VERSION || '2024-08-01-preview';
+      const deployment = config?.model || process.env.CLOUD_AI_MODEL;
 
       if (!baseURL) {
         throw new CloudConfigurationError('CLOUD_AI_BASE_URL is required for Azure OpenAI endpoints');
@@ -63,10 +78,31 @@ export class GenericCloudAgent {
         baseURL: baseURL || 'https://api.openai.com/v1',
       });
 
-      this.model = process.env.CLOUD_AI_MODEL || 'gpt-4o';
+      this.model = config?.model || process.env.CLOUD_AI_MODEL || 'gpt-4o';
     }
 
     this.systemPrompt = this.buildSystemPrompt();
+  }
+
+  /**
+   * Create agent with runtime configuration (for Studio settings)
+   */
+  static createWithConfig(config: CloudAgentConfig): GenericCloudAgent {
+    return new GenericCloudAgent(config);
+  }
+
+  /**
+   * Get the model name this agent is configured to use
+   */
+  getModel(): string {
+    return this.model;
+  }
+
+  /**
+   * Check if this agent is configured for Azure
+   */
+  isAzureEndpoint(): boolean {
+    return this.isAzure;
   }
 
   private buildSystemPrompt(): string {
@@ -148,6 +184,15 @@ IMPORTANT GUIDELINES:
       if (result.confidence < 0.7 && !result.requires_specialist) {
         result.requires_specialist = true;
         result.specialist_notes = result.specialist_notes || 'Confidence below 70% threshold - requires human review';
+      }
+
+      // Capture token usage from API response
+      if (response.usage) {
+        result.usage = {
+          prompt_tokens: response.usage.prompt_tokens,
+          completion_tokens: response.usage.completion_tokens,
+          total_tokens: response.usage.total_tokens,
+        };
       }
 
       return result;

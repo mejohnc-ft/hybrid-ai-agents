@@ -8,6 +8,9 @@ const ResolutionResultSchema = z.object({
   similar_incidents: z.array(z.string()),
   should_escalate: z.boolean(),
   escalation_reason: z.string().optional(),
+  // Token usage fields (optional, added by updated NPU service)
+  tokens_input: z.number().optional(),
+  tokens_output: z.number().optional(),
 });
 
 export class NPUAgentClient {
@@ -15,6 +18,20 @@ export class NPUAgentClient {
 
   constructor(baseUrl: string = process.env.NPU_AGENT_URL || 'http://localhost:8000') {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Create a client with a specific URL (for runtime configuration)
+   */
+  static createWithUrl(url: string): NPUAgentClient {
+    return new NPUAgentClient(url);
+  }
+
+  /**
+   * Get the base URL this client is configured to use
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   /**

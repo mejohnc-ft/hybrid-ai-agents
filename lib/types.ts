@@ -62,6 +62,9 @@ export interface NPUResolutionResult {
   similar_incidents: string[];
   should_escalate: boolean;
   escalation_reason?: string;
+  // Token usage fields (added for studio metrics)
+  tokens_input?: number;
+  tokens_output?: number;
 }
 
 // Routing decision types

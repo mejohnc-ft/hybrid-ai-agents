@@ -55,6 +55,27 @@ export interface DemoChatMessage {
   created_at: number;
 }
 
+// Studio Settings for runtime configuration
+export interface StudioSetting {
+  key: string;
+  value: string;
+  encrypted: number; // 0 or 1
+  updated_at: number;
+}
+
+// Studio Metrics for tracking token usage and costs
+export interface StudioMetric {
+  id: string;
+  session_id: string;
+  scenario_id?: string;
+  tier: 'mcp' | 'edge' | 'cloud';
+  latency_ms: number;
+  tokens_input: number;
+  tokens_output: number;
+  cost_usd: number;
+  created_at: number;
+}
+
 export class DemoDB {
   private db: Database.Database;
 
@@ -123,6 +144,30 @@ export class DemoDB {
       CREATE INDEX IF NOT EXISTS idx_incidents_created_at ON incidents(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_activity_log_incident_id ON activity_log(incident_id, timestamp_ms);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at);
+
+      -- Studio settings for runtime API configuration
+      CREATE TABLE IF NOT EXISTS studio_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        encrypted INTEGER DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+
+      -- Studio metrics for tracking token usage and costs
+      CREATE TABLE IF NOT EXISTS studio_metrics (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        scenario_id TEXT,
+        tier TEXT NOT NULL,
+        latency_ms INTEGER NOT NULL,
+        tokens_input INTEGER NOT NULL,
+        tokens_output INTEGER NOT NULL,
+        cost_usd REAL NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_studio_metrics_session ON studio_metrics(session_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_studio_metrics_tier ON studio_metrics(tier);
     `);
   }
 
@@ -354,6 +399,111 @@ export class DemoDB {
       DELETE FROM incident_resolutions;
       DELETE FROM incidents;
     `);
+  }
+
+  // Studio Settings CRUD
+  getSetting(key: string): StudioSetting | null {
+    const stmt = this.db.prepare('SELECT * FROM studio_settings WHERE key = ?');
+    return stmt.get(key) as StudioSetting | null;
+  }
+
+  getAllSettings(): StudioSetting[] {
+    const stmt = this.db.prepare('SELECT * FROM studio_settings ORDER BY key');
+    return stmt.all() as StudioSetting[];
+  }
+
+  setSetting(key: string, value: string, encrypted: boolean = false): StudioSetting {
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT INTO studio_settings (key, value, encrypted, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        encrypted = excluded.encrypted,
+        updated_at = excluded.updated_at
+    `);
+    stmt.run(key, value, encrypted ? 1 : 0, now);
+    return { key, value, encrypted: encrypted ? 1 : 0, updated_at: now };
+  }
+
+  deleteSetting(key: string): void {
+    const stmt = this.db.prepare('DELETE FROM studio_settings WHERE key = ?');
+    stmt.run(key);
+  }
+
+  // Studio Metrics CRUD
+  createMetric(data: Omit<StudioMetric, 'id' | 'created_at'>): StudioMetric {
+    const metric: StudioMetric = {
+      id: randomUUID(),
+      ...data,
+      created_at: Date.now(),
+    };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO studio_metrics (id, session_id, scenario_id, tier, latency_ms, tokens_input, tokens_output, cost_usd, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      metric.id,
+      metric.session_id,
+      metric.scenario_id || null,
+      metric.tier,
+      metric.latency_ms,
+      metric.tokens_input,
+      metric.tokens_output,
+      metric.cost_usd,
+      metric.created_at
+    );
+
+    return metric;
+  }
+
+  getSessionMetrics(sessionId: string): StudioMetric[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM studio_metrics
+      WHERE session_id = ?
+      ORDER BY created_at ASC
+    `);
+    return stmt.all(sessionId) as StudioMetric[];
+  }
+
+  getStudioAnalytics(): {
+    totalSessions: number;
+    totalTokensInput: number;
+    totalTokensOutput: number;
+    totalCost: number;
+    avgLatencyByTier: { tier: string; avg_latency: number }[];
+  } {
+    const sessionCount = this.db.prepare(
+      'SELECT COUNT(DISTINCT session_id) as count FROM studio_metrics'
+    ).get() as { count: number };
+
+    const tokenTotals = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(tokens_input), 0) as total_input,
+        COALESCE(SUM(tokens_output), 0) as total_output,
+        COALESCE(SUM(cost_usd), 0) as total_cost
+      FROM studio_metrics
+    `).get() as { total_input: number; total_output: number; total_cost: number };
+
+    const latencyByTier = this.db.prepare(`
+      SELECT tier, AVG(latency_ms) as avg_latency
+      FROM studio_metrics
+      GROUP BY tier
+    `).all() as { tier: string; avg_latency: number }[];
+
+    return {
+      totalSessions: sessionCount.count,
+      totalTokensInput: tokenTotals.total_input,
+      totalTokensOutput: tokenTotals.total_output,
+      totalCost: tokenTotals.total_cost,
+      avgLatencyByTier: latencyByTier,
+    };
+  }
+
+  clearStudioMetrics(): void {
+    this.db.exec('DELETE FROM studio_metrics');
   }
 
   close(): void {

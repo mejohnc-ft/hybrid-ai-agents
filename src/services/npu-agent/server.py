@@ -40,6 +40,9 @@ class ResolutionResponse(BaseModel):
     similar_incidents: list[str]
     should_escalate: bool
     escalation_reason: str | None = None
+    # Token usage tracking for Studio metrics
+    tokens_input: int = 0
+    tokens_output: int = 0
 
 class KnowledgeEntry(BaseModel):
     incident_summary: str
@@ -151,6 +154,15 @@ async def resolve_incident(incident: IncidentRequest):
         # Step 3: Calculate confidence
         confidence = calculate_confidence(resolution_text, reasoning, context_docs)
 
+        # Step 4: Calculate token usage (estimation based on text length)
+        # Approximation: ~4 characters per token for English text
+        input_text = f"{incident.summary}\n{incident.description}"
+        context_text = "\n".join(context_docs) if context_docs else ""
+        full_input = input_text + context_text
+
+        tokens_input = estimate_tokens(full_input)
+        tokens_output = estimate_tokens(resolution_text + reasoning)
+
         return ResolutionResponse(
             confidence=confidence,
             resolution=resolution_text,
@@ -160,7 +172,9 @@ async def resolve_incident(incident: IncidentRequest):
             escalation_reason=(
                 f"Confidence {confidence:.2f} below threshold {CONFIDENCE_THRESHOLD}"
                 if confidence < CONFIDENCE_THRESHOLD else None
-            )
+            ),
+            tokens_input=tokens_input,
+            tokens_output=tokens_output
         )
 
     except Exception as e:
@@ -275,6 +289,18 @@ Due to limited information, this incident should be escalated to a human agent."
 
     reasoning = "Incident pattern not recognized in T1 knowledge base - requires specialist attention"
     return resolution, reasoning
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count for text.
+    Uses a simple approximation: ~4 characters per token for English text.
+    For more accurate counts, could use tiktoken or the model's tokenizer.
+    """
+    if not text:
+        return 0
+    # Rough approximation: ~4 chars per token for English
+    return max(1, len(text) // 4)
 
 
 def calculate_confidence(resolution: str, reasoning: str, context_docs: list[str]) -> float:
