@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+onnxruntime-directml==1.19.0
+chromadb==0.6.0
+sentence-transformers==3.5.1
+numpy==2.2.1
+pydantic==2.10.5
+python-multipart==0.0.20
+transformers==4.47.1

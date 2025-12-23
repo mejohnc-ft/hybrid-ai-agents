@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "ms-vscode.azure-account",
+    "ms-azuretools.vscode-azureappservice",
+    "ms-azuretools.vscode-azurefunctions",
+    "ms-azuretools.azure-dev",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss"
+  ]
+}
