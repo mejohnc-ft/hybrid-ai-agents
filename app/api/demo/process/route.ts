@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DemoDecisionEngine } from '@/lib/orchestration/demo-decision-engine';
+import { CloudConfigurationError } from '@/lib/agents/cloud-client';
 import type { Incident } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
@@ -78,6 +79,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
+    if (error instanceof CloudConfigurationError) {
+      return NextResponse.json(
+        {
+          error: 'Cloud agent is not configured correctly.',
+          details:
+            'Set CLOUD_AI_API_KEY and CLOUD_AI_BASE_URL (Azure endpoints require CLOUD_AI_MODEL for the deployment name and optional AZURE_OPENAI_API_VERSION).',
+        },
+        { status: 400 }
+      );
+    }
+
     console.error('Demo processing error:', error);
     return NextResponse.json(
       {
