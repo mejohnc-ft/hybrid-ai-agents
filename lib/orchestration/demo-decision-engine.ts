@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { getDemoDB, DemoIncident } from '../demo-db';
 import { npuAgent } from '../agents/npu-client';
-import { getCloudAgent } from '../agents/cloud-client';
+import { CloudConfigurationError, getCloudAgent } from '../agents/cloud-client';
 import type { Incident } from '../types';
 
 export interface ActivityEvent {
@@ -418,6 +418,10 @@ export class DemoDecisionEngine extends EventEmitter {
       }
     } catch (error) {
       console.error('Cloud agent error:', error);
+
+      if (error instanceof CloudConfigurationError) {
+        throw error;
+      }
 
       this.emitActivity({
         incidentId: demoIncident.id,

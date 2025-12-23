@@ -21,6 +21,8 @@ export interface CloudResolutionResult {
   specialist_notes?: string;
 }
 
+export class CloudConfigurationError extends Error {}
+
 export class GenericCloudAgent {
   private client: OpenAI;
   private model: string;
@@ -30,17 +32,40 @@ export class GenericCloudAgent {
     // Support any OpenAI-compatible API
     const apiKey = process.env.CLOUD_AI_API_KEY;
     const baseURL = process.env.CLOUD_AI_BASE_URL;
+    const isAzureEndpoint = baseURL?.toLowerCase().includes('.azure.com');
 
     if (!apiKey) {
-      throw new Error('CLOUD_AI_API_KEY environment variable is required');
+      throw new CloudConfigurationError('CLOUD_AI_API_KEY environment variable is required');
     }
 
-    this.client = new OpenAI({
-      apiKey,
-      baseURL: baseURL || 'https://api.openai.com/v1',
-    });
+    if (isAzureEndpoint) {
+      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-08-01-preview';
+      const deployment = process.env.CLOUD_AI_MODEL;
 
-    this.model = process.env.CLOUD_AI_MODEL || 'gpt-4o';
+      if (!baseURL) {
+        throw new CloudConfigurationError('CLOUD_AI_BASE_URL is required for Azure OpenAI endpoints');
+      }
+
+      if (!deployment) {
+        throw new CloudConfigurationError('CLOUD_AI_MODEL must be set to your Azure deployment name');
+      }
+
+      this.client = new OpenAI({
+        baseURL,
+        defaultHeaders: { 'api-key': apiKey },
+        defaultQuery: { 'api-version': apiVersion },
+      });
+
+      this.model = deployment;
+    } else {
+      this.client = new OpenAI({
+        apiKey,
+        baseURL: baseURL || 'https://api.openai.com/v1',
+      });
+
+      this.model = process.env.CLOUD_AI_MODEL || 'gpt-4o';
+    }
+
     this.systemPrompt = this.buildSystemPrompt();
   }
 
