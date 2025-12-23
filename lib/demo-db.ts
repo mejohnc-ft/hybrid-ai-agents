@@ -43,6 +43,18 @@ export interface DemoActivityLog {
   metadata?: string;
 }
 
+export interface DemoChatMessage {
+  id: string;
+  session_id: string;
+  role: 'user' | 'agent';
+  content: string;
+  route?: 'npu' | 'cloud';
+  confidence?: number;
+  latency_ms?: number;
+  escalated?: number;
+  created_at: number;
+}
+
 export class DemoDB {
   private db: Database.Database;
 
@@ -95,9 +107,22 @@ export class DemoDB {
         FOREIGN KEY (incident_id) REFERENCES incidents(id)
       );
 
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        route TEXT,
+        confidence REAL,
+        latency_ms INTEGER,
+        escalated INTEGER,
+        created_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
       CREATE INDEX IF NOT EXISTS idx_incidents_created_at ON incidents(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_activity_log_incident_id ON activity_log(incident_id, timestamp_ms);
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at);
     `);
   }
 
@@ -280,6 +305,45 @@ export class DemoDB {
       avgNpuConfidence: npuStats.avg_confidence || 0,
       avgCloudConfidence: cloudStats.avg_confidence || 0,
     };
+  }
+
+  // Chat history
+  createChatMessage(data: Omit<DemoChatMessage, 'id' | 'created_at'>): DemoChatMessage {
+    const message: DemoChatMessage = {
+      id: randomUUID(),
+      ...data,
+      created_at: Date.now(),
+    };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO chat_messages (id, session_id, role, content, route, confidence, latency_ms, escalated, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      message.id,
+      message.session_id,
+      message.role,
+      message.content,
+      message.route || null,
+      message.confidence ?? null,
+      message.latency_ms ?? null,
+      message.escalated ?? null,
+      message.created_at
+    );
+
+    return message;
+  }
+
+  getChatHistory(sessionId: string): DemoChatMessage[] {
+    const stmt = this.db.prepare(`
+      SELECT *
+      FROM chat_messages
+      WHERE session_id = ?
+      ORDER BY created_at ASC
+    `);
+
+    return stmt.all(sessionId) as DemoChatMessage[];
   }
 
   // Clear all data (for demo reset)
