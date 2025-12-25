@@ -2,6 +2,7 @@
 
 export interface Incident {
   id: string;
+  tenantId: string;
   summary: string;
   description: string;
   category?: string;

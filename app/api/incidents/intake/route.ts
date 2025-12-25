@@ -3,8 +3,19 @@ import { supabase } from '@/lib/supabase';
 import { npuAgent } from '@/lib/agents/npu-client';
 import { Incident, IncidentIntakeResponse } from '@/lib/types';
 
+const getTenantId = (request: NextRequest) => request.headers.get('x-tenant-id');
+
 export async function POST(request: NextRequest) {
   try {
+    const tenantId = getTenantId(request);
+
+    if (!tenantId) {
+      return NextResponse.json(
+        { error: 'Missing required header: x-tenant-id' },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json();
 
     // Validate required fields
@@ -19,6 +30,7 @@ export async function POST(request: NextRequest) {
     const { data: incident, error: insertError } = await supabase
       .from('incidents')
       .insert({
+        tenant_id: tenantId,
         summary: body.summary,
         description: body.description,
         category: body.category || null,
@@ -69,6 +81,7 @@ export async function POST(request: NextRequest) {
           // Record resolution
           await supabase.from('incident_resolutions').insert({
             incident_id: incident.id,
+            tenant_id: tenantId,
             agent: 'npu',
             resolution: resolution.resolution,
             confidence: resolution.confidence,
@@ -142,6 +155,15 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const tenantId = getTenantId(request);
+
+    if (!tenantId) {
+      return NextResponse.json(
+        { error: 'Missing required header: x-tenant-id' },
+        { status: 400 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const priority = searchParams.get('priority');
@@ -150,6 +172,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('incidents')
       .select('*')
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(limit);
 
